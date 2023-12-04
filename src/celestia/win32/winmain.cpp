@@ -35,7 +35,6 @@
 #include <celutil/array_view.h>
 #include <celutil/gettext.h>
 #include <celutil/fsutils.h>
-#include <celutil/winutil.h>
 #include <celutil/tzutil.h>
 #include <celutil/filetype.h>
 #include <celutil/logger.h>
@@ -46,6 +45,9 @@
 #include "celestia/helper.h"
 #include "celestia/scriptmenu.h"
 #include "celestia/url.h"
+#include "tstring.h"
+#include "windatepicker.h"
+#include "winmoviecapture.h"
 #include "winstarbrowser.h"
 #include "winssbrowser.h"
 #include "wintourguide.h"
@@ -61,10 +63,6 @@
 #include "winuiutils.h"
 
 #include "res/resource.h"
-
-#ifdef USE_FFMPEG
-#include "celestia/ffmpegcapture.h"
-#endif
 
 #include <epoxy/wgl.h>
 #include <process.h>
@@ -140,38 +138,6 @@ static POINT saveCursorPos;
 static POINT lastMouseMove;
 class WinCursorHandler;
 WinCursorHandler* cursorHandler = NULL;
-
-#ifdef USE_FFMPEG
-static int MovieSizes[8][2] = {
-                                { 160, 120 },
-                                { 320, 240 },
-                                { 640, 480 },
-                                { 720, 480 },
-                                { 720, 576 },
-                                { 1024, 768 },
-                                { 1280, 720 },
-                                { 1920, 1080 }
-                              };
-
-static float MovieFramerates[5] = { 15.0f, 24.0f, 25.0f, 29.97f, 30.0f };
-
-struct MovieCodec
-{
-    AVCodecID   codecId;
-    const char *codecDesc;
-};
-
-static MovieCodec MovieCodecs[2] =
-{
-    { AV_CODEC_ID_FFVHUFF, N_("Lossless")      },
-    { AV_CODEC_ID_H264,    N_("Lossy (H.264)") }
-};
-
-static int movieSize = 1;
-static int movieFramerate = 1;
-static int movieCodec = 1;
-static int64_t movieBitrate = 400000;
-#endif
 
 astro::Date newTime(0.0);
 
@@ -455,32 +421,6 @@ static void ShowLocalTime(CelestiaCore* appCore)
     }
 }
 
-#ifdef USE_FFMPEG
-static bool BeginMovieCapture(const Renderer* renderer,
-                              const std::string& filename,
-                              int width, int height,
-                              float framerate,
-                              AVCodecID codec,
-                              int64_t bitrate)
-{
-    auto* movieCapture = new FFMPEGCapture(renderer);
-    movieCapture->setVideoCodec(codec);
-    movieCapture->setBitRate(bitrate);
-    if (codec == AV_CODEC_ID_H264)
-        movieCapture->setEncoderOptions(appCore->getConfig()->x264EncoderOptions);
-    else
-        movieCapture->setEncoderOptions(appCore->getConfig()->ffvhEncoderOptions);
-
-    bool success = movieCapture->start(filename, width, height, framerate);
-    if (success)
-        appCore->initMovieCapture(movieCapture);
-    else
-        delete movieCapture;
-
-    return success;
-}
-#endif
-
 static bool CopyStateURLToClipboard()
 {
     BOOL b;
@@ -552,7 +492,7 @@ bool LoadItemTextFromFile(HWND hWnd,
             s += c;
     }
 
-    SetDlgItemText(hWnd, item, UTF8ToCurrentCP(s).c_str());
+    SetDlgItemText(hWnd, item, UTF8ToTString(s).c_str());
 
     return true;
 }
@@ -674,7 +614,7 @@ BOOL APIENTRY GLInfoProc(HWND hDlg,
                 s.replace(startPos, 1, "\r\n");
                 startPos += 2;
             }
-            s = UTF8ToCurrentCP(s);
+            s = UTF8ToTString(s);
             SetDlgItemText(hDlg, IDC_GLINFO_TEXT, s.c_str());
         }
         return(TRUE);
@@ -690,108 +630,6 @@ BOOL APIENTRY GLInfoProc(HWND hDlg,
 
     return FALSE;
 }
-
-#ifdef USE_FFMPEG
-UINT CALLBACK ChooseMovieParamsProc(HWND hDlg, UINT message,
-                                    WPARAM wParam, LPARAM lParam)
-{
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        {
-            char buf[100];
-            HWND hwnd = GetDlgItem(hDlg, IDC_COMBO_MOVIE_SIZE);
-            int nSizes = sizeof MovieSizes / sizeof MovieSizes[0];
-
-            for (int i = 0; i < nSizes; i++)
-            {
-                sprintf(buf, _("%d x %d"), MovieSizes[i][0], MovieSizes[i][1]);
-                SendMessage(hwnd, CB_INSERTSTRING, -1,
-                            reinterpret_cast<LPARAM>(buf));
-            }
-            SendMessage(hwnd, CB_SETCURSEL, movieSize, 0);
-
-            hwnd = GetDlgItem(hDlg, IDC_COMBO_MOVIE_FRAMERATE);
-            int nFramerates = sizeof MovieFramerates / sizeof MovieFramerates[0];
-            for (int i = 0; i < nFramerates; i++)
-            {
-                sprintf(buf, "%.2f", MovieFramerates[i]);
-                SendMessage(hwnd, CB_INSERTSTRING, -1,
-                            reinterpret_cast<LPARAM>(buf));
-            }
-            SendMessage(hwnd, CB_SETCURSEL, movieFramerate, 0);
-
-            hwnd = GetDlgItem(hDlg, IDC_COMBO_MOVIE_CODEC);
-            int nCodecs = sizeof MovieCodecs / sizeof MovieCodecs[0];
-            for (int i = 0; i < nCodecs; i++)
-            {
-                SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(_(MovieCodecs[i].codecDesc)));
-            }
-            SendMessage(hwnd, CB_SETCURSEL, movieCodec, 0);
-
-            hwnd = GetDlgItem(hDlg, IDC_EDIT_MOVIE_BITRATE);
-            SetWindowText(hwnd, "400000");
-        }
-        return TRUE;
-
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDC_COMBO_MOVIE_SIZE)
-        {
-            if (HIWORD(wParam) == CBN_SELCHANGE)
-            {
-                HWND hwnd = reinterpret_cast<HWND>(lParam);
-                int item = SendMessage(hwnd, CB_GETCURSEL, 0, 0);
-                if (item != CB_ERR)
-                    movieSize = item;
-            }
-            return TRUE;
-        }
-        else if (LOWORD(wParam) == IDC_COMBO_MOVIE_FRAMERATE)
-        {
-            if (HIWORD(wParam) == CBN_SELCHANGE)
-            {
-                HWND hwnd = reinterpret_cast<HWND>(lParam);
-                int item = SendMessage(hwnd, CB_GETCURSEL, 0, 0);
-                if (item != CB_ERR)
-                    movieFramerate = item;
-            }
-            return TRUE;
-        }
-        else if (LOWORD(wParam) == IDC_COMBO_MOVIE_CODEC)
-        {
-            if (HIWORD(wParam) == CBN_SELCHANGE)
-            {
-                HWND hwnd = reinterpret_cast<HWND>(lParam);
-                int item = SendMessage(hwnd, CB_GETCURSEL, 0, 0);
-                if (item != CB_ERR)
-                    movieCodec = item;
-            }
-            return TRUE;
-        }
-        else if (LOWORD(wParam) == IDC_EDIT_MOVIE_BITRATE)
-        {
-            if (HIWORD(wParam) == EN_CHANGE)
-            {
-                char buf[24], out[24];
-                int len = GetDlgItemText(hDlg, IDC_EDIT_MOVIE_BITRATE, buf, sizeof(buf));
-                int wlen = 0;
-                if (len > 0)
-                {
-                    wchar_t wbuff[48];
-                    wlen = MultiByteToWideChar(CP_ACP, 0, buf, -1, wbuff, sizeof(wbuff));
-                    WideCharToMultiByte(CP_UTF8, 0, wbuff, wlen, out, sizeof(out), NULL, NULL);
-                }
-                auto result = std::from_chars(out, out + wlen, movieBitrate);
-                if (result.ec != std::errc())
-                    movieBitrate = 400000;
-            }
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-#endif
 
 BOOL APIENTRY FindObjectProc(HWND hDlg,
                              UINT message,
@@ -971,7 +809,7 @@ BOOL APIENTRY AddBookmarkProc(HWND hDlg,
             {
             case SelectionType::Body:
                 {
-                    string name = UTF8ToCurrentCP(sel.body()->getName(true));
+                    string name = UTF8ToTString(sel.body()->getName(true));
                     SetWindowText(hCtrl, (char*)name.c_str());
                 }
                 break;
@@ -1398,7 +1236,7 @@ BOOL APIENTRY SelectDisplayModeProc(HWND hDlg,
             HWND hwnd = GetDlgItem(hDlg, IDC_COMBO_RESOLUTION);
 
             // Add windowed mode as the first item on the menu
-            string str = UTF8ToCurrentCP(_("Windowed Mode"));
+            string str = UTF8ToTString(_("Windowed Mode"));
             SendMessage(hwnd, CB_INSERTSTRING, -1,
                         reinterpret_cast<LPARAM>(str.c_str()));
 
@@ -1500,28 +1338,28 @@ static HMENU CreatePlanetarySystemMenu(string parentName, const PlanetarySystem*
             switch(body->getClassification())
             {
             case Body::Asteroid:
-                asteroids.push_back(make_pair(i, UTF8ToCurrentCP(body->getName(true))));
+                asteroids.push_back(make_pair(i, UTF8ToTString(body->getName(true))));
                 break;
             case Body::Comet:
-                comets.push_back(make_pair(i, UTF8ToCurrentCP(body->getName(true))));
+                comets.push_back(make_pair(i, UTF8ToTString(body->getName(true))));
                 break;
             case Body::Invisible:
-                invisibles.push_back(make_pair(i, UTF8ToCurrentCP(body->getName(true))));
+                invisibles.push_back(make_pair(i, UTF8ToTString(body->getName(true))));
                 break;
             case Body::Moon:
-                moons.push_back(make_pair(i, UTF8ToCurrentCP(body->getName(true))));
+                moons.push_back(make_pair(i, UTF8ToTString(body->getName(true))));
                 break;
             case Body::MinorMoon:
-                minorMoons.push_back(make_pair(i, UTF8ToCurrentCP(body->getName())));
+                minorMoons.push_back(make_pair(i, UTF8ToTString(body->getName())));
                 break;
             case Body::Planet:
-                planets.push_back(make_pair(i, UTF8ToCurrentCP(body->getName(true))));
+                planets.push_back(make_pair(i, UTF8ToTString(body->getName(true))));
                 break;
             case Body::DwarfPlanet:
-                dwarfPlanets.push_back(make_pair(i, UTF8ToCurrentCP(body->getName())));
+                dwarfPlanets.push_back(make_pair(i, UTF8ToTString(body->getName())));
                 break;
             case Body::Spacecraft:
-                spacecraft.push_back(make_pair(i, UTF8ToCurrentCP(body->getName(true))));
+                spacecraft.push_back(make_pair(i, UTF8ToTString(body->getName(true))));
                 break;
             }
         }
@@ -1529,22 +1367,22 @@ static HMENU CreatePlanetarySystemMenu(string parentName, const PlanetarySystem*
 
     // Add each vector of PlanetarySystem bodies to a vector to iterate over
     objects.push_back(asteroids);
-    menuNames.push_back(UTF8ToCurrentCP(_("Asteroids")));
+    menuNames.push_back(UTF8ToTString(_("Asteroids")));
     objects.push_back(comets);
-    menuNames.push_back(UTF8ToCurrentCP(_("Comets")));
+    menuNames.push_back(UTF8ToTString(_("Comets")));
     objects.push_back(invisibles);
-    menuNames.push_back(UTF8ToCurrentCP(_("Invisibles")));
+    menuNames.push_back(UTF8ToTString(_("Invisibles")));
     objects.push_back(moons);
-    menuNames.push_back(UTF8ToCurrentCP(_("Moons")));
+    menuNames.push_back(UTF8ToTString(_("Moons")));
     objects.push_back(minorMoons);
     menuNames.push_back(_("Minor moons"));
     objects.push_back(planets);
-    menuNames.push_back(UTF8ToCurrentCP(_("Planets")));
+    menuNames.push_back(UTF8ToTString(_("Planets")));
     objects.push_back(dwarfPlanets);
     menuNames.push_back(_("Dwarf planets"));
     objects.push_back(spacecraft);
     // TRANSLATORS: translate this as plural
-    menuNames.push_back(UTF8ToCurrentCP(C_("plural", "Spacecraft")));
+    menuNames.push_back(UTF8ToTString(C_("plural", "Spacecraft")));
 
     // Now sort each vector and generate submenus
     IntStrPairComparePredicate pred;
@@ -1577,7 +1415,7 @@ static HMENU CreatePlanetarySystemMenu(string parentName, const PlanetarySystem*
             else
             {
                 // Skip sorting if we are dealing with the planets in our own Solar System.
-                if (parentName != "Sol" || *menuName != UTF8ToCurrentCP(_("Planets")))
+                if (parentName != "Sol" || *menuName != UTF8ToTString(_("Planets")))
                     sort(obj->begin(), obj->end(), pred);
 
                 if (numSubMenus > 1)
@@ -1635,20 +1473,20 @@ VOID APIENTRY handlePopupMenu(HWND hwnd,
     case SelectionType::Body:
         {
             name = sel.body()->getName(true);
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_CENTER, UTF8ToCurrentCP(name).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_CENTER, UTF8ToTString(name).c_str());
             AppendMenu(hMenu, MF_SEPARATOR, 0, 0);
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_GOTO, UTF8ToCurrentCP(_("&Goto")).c_str());
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_FOLLOW, UTF8ToCurrentCP(_("&Follow")).c_str());
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_SYNCORBIT, UTF8ToCurrentCP(_("S&ync Orbit")).c_str());
-            AppendMenu(hMenu, MF_STRING, ID_INFO, UTF8ToCurrentCP(_("&Info")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_GOTO, UTF8ToTString(_("&Goto")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_FOLLOW, UTF8ToTString(_("&Follow")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_SYNCORBIT, UTF8ToTString(_("S&ync Orbit")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_INFO, UTF8ToTString(_("&Info")).c_str());
             HMENU refVectorMenu = CreatePopupMenu();
-            AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) refVectorMenu, UTF8ToCurrentCP(_("&Reference Marks")).c_str());
-            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_BODY_AXES, UTF8ToCurrentCP(_("Show Body Axes")).c_str());
-            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_FRAME_AXES, UTF8ToCurrentCP(_("Show Frame Axes")).c_str());
-            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_SUN_DIRECTION, UTF8ToCurrentCP(_("Show Sun Direction")).c_str());
-            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_VELOCITY_VECTOR, UTF8ToCurrentCP(_("Show Velocity Vector")).c_str());
-            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_PLANETOGRAPHIC_GRID, UTF8ToCurrentCP(_("Show Planetographic Grid")).c_str());
-            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_TERMINATOR, UTF8ToCurrentCP(_("Show Terminator")).c_str());
+            AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) refVectorMenu, UTF8ToTString(_("&Reference Marks")).c_str());
+            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_BODY_AXES, UTF8ToTString(_("Show Body Axes")).c_str());
+            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_FRAME_AXES, UTF8ToTString(_("Show Frame Axes")).c_str());
+            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_SUN_DIRECTION, UTF8ToTString(_("Show Sun Direction")).c_str());
+            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_VELOCITY_VECTOR, UTF8ToTString(_("Show Velocity Vector")).c_str());
+            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_PLANETOGRAPHIC_GRID, UTF8ToTString(_("Show Planetographic Grid")).c_str());
+            AppendMenu(refVectorMenu, MF_STRING, ID_RENDER_TERMINATOR, UTF8ToTString(_("Show Terminator")).c_str());
 
             CheckMenuItem(refVectorMenu, ID_RENDER_BODY_AXES,   sel.body()->findReferenceMark("body axes") ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(refVectorMenu, ID_RENDER_FRAME_AXES,  sel.body()->findReferenceMark("frame axes") ? MF_CHECKED : MF_UNCHECKED);
@@ -1657,14 +1495,14 @@ VOID APIENTRY handlePopupMenu(HWND hwnd,
             CheckMenuItem(refVectorMenu, ID_RENDER_PLANETOGRAPHIC_GRID, sel.body()->findReferenceMark("planetographic grid") ? MF_CHECKED : MF_UNCHECKED);
             CheckMenuItem(refVectorMenu, ID_RENDER_TERMINATOR, sel.body()->findReferenceMark("terminator") ? MF_CHECKED : MF_UNCHECKED);
 
-            AppendMenu(hMenu, MF_STRING, ID_SELECT_PRIMARY_BODY, UTF8ToCurrentCP(_("Select &Primary Body")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_SELECT_PRIMARY_BODY, UTF8ToTString(_("Select &Primary Body")).c_str());
 
             if (const PlanetarySystem* satellites = sel.body()->getSatellites();
                 satellites != nullptr && satellites->getSystemSize() != 0)
             {
                 HMENU satMenu = CreatePlanetarySystemMenu(name, satellites);
                 AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) satMenu,
-                           UTF8ToCurrentCP(_("&Satellites")).c_str());
+                           UTF8ToTString(_("&Satellites")).c_str());
             }
 
             if (auto altSurfaces = sel.body()->getAlternateSurfaceNames();
@@ -1672,7 +1510,7 @@ VOID APIENTRY handlePopupMenu(HWND hwnd,
             {
                 HMENU surfMenu = CreateAlternateSurfaceMenu(*altSurfaces);
                 AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) surfMenu,
-                            UTF8ToCurrentCP(_("&Alternate Surfaces")).c_str());
+                            UTF8ToTString(_("&Alternate Surfaces")).c_str());
             }
         }
         break;
@@ -1681,19 +1519,19 @@ VOID APIENTRY handlePopupMenu(HWND hwnd,
         {
             Simulation* sim = appCore->getSimulation();
             name = sim->getUniverse()->getStarCatalog()->getStarName(*(sel.star()));
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_CENTER, UTF8ToCurrentCP(name).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_CENTER, UTF8ToTString(name).c_str());
             AppendMenu(hMenu, MF_SEPARATOR, 0, 0);
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_GOTO, UTF8ToCurrentCP(_("&Goto")).c_str());
-            AppendMenu(hMenu, MF_STRING, ID_INFO, UTF8ToCurrentCP(_("&Info")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_GOTO, UTF8ToTString(_("&Goto")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_INFO, UTF8ToTString(_("&Info")).c_str());
 
             const SolarSystem* solarSys = sim->getUniverse()->getSolarSystem(sel.star());
             if (solarSys != nullptr)
             {
                 HMENU planetsMenu = CreatePlanetarySystemMenu(name, solarSys->getPlanets());
                 if (name == "Sol")
-                    AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) planetsMenu, UTF8ToCurrentCP(_("Orbiting Bodies")).c_str());
+                    AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) planetsMenu, UTF8ToTString(_("Orbiting Bodies")).c_str());
                 else
-                    AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) planetsMenu, UTF8ToCurrentCP(_("Planets")).c_str());
+                    AppendMenu(hMenu, MF_POPUP | MF_STRING, (UINT_PTR) planetsMenu, UTF8ToTString(_("Planets")).c_str());
             }
         }
         break;
@@ -1702,11 +1540,11 @@ VOID APIENTRY handlePopupMenu(HWND hwnd,
         {
             Simulation* sim = appCore->getSimulation();
             name = sim->getUniverse()->getDSOCatalog()->getDSOName(sel.deepsky());
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_CENTER, UTF8ToCurrentCP(name).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_CENTER, UTF8ToTString(name).c_str());
             AppendMenu(hMenu, MF_SEPARATOR, 0, 0);
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_GOTO, UTF8ToCurrentCP(_("&Goto")).c_str());
-            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_FOLLOW, UTF8ToCurrentCP(_("&Follow")).c_str());
-            AppendMenu(hMenu, MF_STRING, ID_INFO, UTF8ToCurrentCP(_("&Info")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_GOTO, UTF8ToTString(_("&Goto")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_NAVIGATION_FOLLOW, UTF8ToTString(_("&Follow")).c_str());
+            AppendMenu(hMenu, MF_STRING, ID_INFO, UTF8ToTString(_("&Info")).c_str());
         }
         break;
 
@@ -1718,9 +1556,9 @@ VOID APIENTRY handlePopupMenu(HWND hwnd,
     }
 
     if (appCore->getSimulation()->getUniverse()->isMarked(sel, 1))
-        AppendMenu(hMenu, MF_STRING, ID_TOOLS_UNMARK, UTF8ToCurrentCP(_("&Unmark")).c_str());
+        AppendMenu(hMenu, MF_STRING, ID_TOOLS_UNMARK, UTF8ToTString(_("&Unmark")).c_str());
     else
-        AppendMenu(hMenu, MF_STRING, ID_TOOLS_MARK, UTF8ToCurrentCP(_("&Mark")).c_str());
+        AppendMenu(hMenu, MF_STRING, ID_TOOLS_MARK, UTF8ToTString(_("&Mark")).c_str());
 
     POINT point;
     point.x = (int) x;
@@ -2743,127 +2581,6 @@ static void HandleCaptureImage(HWND hWnd)
     }
 }
 
-#ifdef USE_FFMPEG
-static void HandleCaptureMovie(HWND hWnd)
-{
-    // TODO: The menu item should be disable so that the user doesn't even
-    // have the opportunity to record two movies simultaneously; the only
-    // thing missing to make this happen is notification when recording
-    // is complete.
-    if (appCore->isCaptureActive())
-    {
-        MessageBox(hWnd,
-                   _("Stop current movie capture before starting another one."),
-                   _("Error"),
-                   MB_OK | MB_ICONERROR);
-        return;
-    }
-
-    // Display File SaveAs dialog to allow user to specify name and location of
-    // of captured movie
-    OPENFILENAME Ofn;
-    char szFile[_MAX_PATH+1], szFileTitle[_MAX_PATH+1];
-
-    szFile[0] = '\0';
-    szFileTitle[0] = '\0';
-
-    // Initialize OPENFILENAME
-    ZeroMemory(&Ofn, sizeof(OPENFILENAME));
-    Ofn.lStructSize = sizeof(OPENFILENAME);
-    Ofn.hwndOwner = hWnd;
-    Ofn.lpstrFilter = "Matroska (*.mkv)\0*.mkv\0";
-    Ofn.lpstrFile= szFile;
-    Ofn.nMaxFile = sizeof(szFile);
-    Ofn.lpstrFileTitle = szFileTitle;
-    Ofn.nMaxFileTitle = sizeof(szFileTitle);
-    Ofn.lpstrInitialDir = (LPSTR)NULL;
-
-    // Comment this out if you just want the standard "Save As" caption.
-    Ofn.lpstrTitle = _("Save As - Specify Output File for Capture Movie");
-
-    // OFN_HIDEREADONLY - Do not display read-only video files
-    // OFN_OVERWRITEPROMPT - If user selected a file, prompt for overwrite confirmation.
-    Ofn.Flags = OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT  | OFN_EXPLORER | OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_NOCHANGEDIR;
-
-    Ofn.hInstance = appInstance;
-    Ofn.lpTemplateName = MAKEINTRESOURCE(IDD_MOVIE_PARAMS_CHOOSER);
-    Ofn.lpfnHook = (LPOFNHOOKPROC)ChooseMovieParamsProc;
-
-    // Display the Save dialog box.
-    if (GetSaveFileName(&Ofn))
-    {
-        // If you got here, a path and file has been specified.
-        // Ofn.lpstrFile contains full path to specified file
-        // Ofn.lpstrFileTitle contains just the filename with extension
-
-        bool success = false;
-
-        DWORD nFileType=0;
-        char defaultExtensions[][4] = { "mkv" };
-        if (Ofn.nFileExtension == 0)
-        {
-            // If no extension was specified, use the selection of filter to
-            // determine which type of file should be created, instead of
-            // just defaulting to AVI.
-            nFileType = Ofn.nFilterIndex;
-            strcat(Ofn.lpstrFile, ".");
-            strcat(Ofn.lpstrFile, defaultExtensions[nFileType-1]);
-        }
-        else if (*(Ofn.lpstrFile + Ofn.nFileExtension) == '\0')
-        {
-            // If just a period was specified for the extension, use
-            // the selection of filter to determine which type of file
-            // should be created, instead of just defaulting to AVI.
-            nFileType = Ofn.nFilterIndex;
-            strcat(Ofn.lpstrFile, defaultExtensions[nFileType-1]);
-        }
-        else
-        {
-            switch (DetermineFileType(Ofn.lpstrFile))
-            {
-            case ContentType::MKV:
-                nFileType = 1;
-                break;
-            default:
-                nFileType = 0;
-                break;
-            }
-        }
-
-        if (nFileType != 1)
-        {
-            // Invalid file extension specified.
-            MessageBox(hWnd,
-                      _("Unknown file extension specified for movie capture."),
-                      _("Error"),
-                      MB_OK | MB_ICONERROR);
-        }
-        else
-        {
-            success = BeginMovieCapture(appCore->getRenderer(),
-                                        string(Ofn.lpstrFile),
-                                        MovieSizes[movieSize][0],
-                                        MovieSizes[movieSize][1],
-                                        MovieFramerates[movieFramerate],
-                                        MovieCodecs[movieCodec].codecId,
-                                        movieBitrate);
-        }
-
-        if (!success)
-        {
-            const char *errorMsg;
-
-            if (nFileType == 0)
-                errorMsg = _("Specified file extension is not recognized.");
-            else
-                errorMsg = _("Could not capture movie.");
-
-            MessageBox(hWnd, errorMsg, _("Error"), MB_OK | MB_ICONERROR);
-        }
-    }
-}
-#endif
-
 static void HandleOpenScript(HWND hWnd, CelestiaCore* appCore)
 {
     // Display File Open dialog to allow user to specify name and location of
@@ -3180,7 +2897,7 @@ public:
 
     virtual void update(const string& filename)
     {
-        splash->setMessage(UTF8ToCurrentCP(_("Loading: ")) + filename);
+        splash->setMessage(fmt::format(_("Loading: {}"), filename));
     }
 
 private:
@@ -3244,7 +2961,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
             if (fs::exists(newSplashFile))
                 splashFile = std::move(newSplashFile);
         }
-        s_splash = new SplashWindow(splashFile.string().c_str());
+        s_splash = new SplashWindow(splashFile);
         s_splash->setMessage(_("Loading data files..."));
         s_splash->showSplash();
     }
@@ -3503,7 +3220,6 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     icex.dwICC = ICC_DATE_CLASSES;
     InitCommonControlsEx(&icex);
 
-    extern void RegisterDatePicker();
     RegisterDatePicker();
 
     appCore->setScreenDpi(GetDPIForWindow(hWnd));
@@ -4367,7 +4083,7 @@ LRESULT CALLBACK MainWindowProc(HWND hWnd,
 
 #ifdef USE_FFMPEG
         case ID_FILE_CAPTUREMOVIE:
-            HandleCaptureMovie(hWnd);
+            HandleCaptureMovie(appInstance, hWnd, appCore);
             break;
 #endif
 

@@ -20,7 +20,7 @@
 #include <commctrl.h>
 
 
-void BuildFavoritesMenu(HMENU, CelestiaCore*, HINSTANCE, ODMenu*);
+void BuildFavoritesMenu(HMENU, CelestiaCore*, HINSTANCE, celestia::win32::ODMenu*);
 HTREEITEM PopulateBookmarkFolders(HWND, CelestiaCore*, HINSTANCE);
 HTREEITEM PopulateBookmarksTree(HWND, CelestiaCore*, HINSTANCE);
 void AddNewBookmarkFolderInTree(HWND, CelestiaCore*, char*);

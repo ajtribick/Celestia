@@ -4,7 +4,9 @@ if(NOT ((WIN32 OR MINGW) AND ENABLE_WIN))
 endif()
 
 set(WIN32_SOURCES
+  datetimehelpers.cpp
   odmenu.cpp
+  tstring.cpp
   winbookmarks.cpp
   windatepicker.cpp
   wineclipses.cpp
@@ -22,8 +24,12 @@ set(WIN32_SOURCES
 )
 
 set(WIN32_HEADERS
+  datetimehelpers.h
   odmenu.h
+  tcharconv.h
+  tstring.h
   winbookmarks.h
+  windatepicker.h
   wineclipses.h
   wingotodlg.h
   winhyperlinks.h
@@ -36,6 +42,11 @@ set(WIN32_HEADERS
   winuiutils.h
   winviewoptsdlg.h
 )
+
+if(ENABLE_FFMPEG)
+  list(APPEND WIN32_SOURCES winmoviecapture.cpp)
+  list(APPEND WIN32_HEADERS winmoviecapture.h)
+endif()
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /MANIFEST:NO")
 

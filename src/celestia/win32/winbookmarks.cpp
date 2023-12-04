@@ -16,6 +16,7 @@
 #include <celutil/winutil.h>
 
 using namespace std;
+using namespace celestia::win32;
 using celestia::util::GetLogger;
 
 bool dragging;
