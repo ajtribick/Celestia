@@ -283,7 +283,7 @@ ODMenu::DrawItemText(const DRAWITEMSTRUCT* lpdis, const ODMENUITEM& item) const
     }
 
     //Draw the item rectangle with appropriate background color
-    ExtTextOut(lpdis->hDC, x, y, ETO_OPAQUE, &rectItem, "", 0, NULL);
+    ExtTextOut(lpdis->hDC, x, y, ETO_OPAQUE, &rectItem, TEXT(""), 0, NULL);
 
     //Draw the text
     DrawText(lpdis->hDC, item.rawDisplayText.c_str(), item.rawDisplayText.length(),

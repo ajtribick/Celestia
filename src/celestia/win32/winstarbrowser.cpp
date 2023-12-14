@@ -188,7 +188,7 @@ constexpr std::array<PFNLVCOMPARE, 5> compareFuncs
     &StarBrowserCompareSpectralType,
 };
 
-void StarBrowserDisplayItem(LPNMLVDISPINFOA nm, StarBrowser* browser)
+void StarBrowserDisplayItem(NMLVDISPINFO* nm, StarBrowser* browser)
 {
     double tdb = browser->appCore->getSimulation()->getTime();
 
@@ -388,7 +388,7 @@ StarBrowserProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 switch(hdr->code)
                 {
                 case LVN_GETDISPINFO:
-                    StarBrowserDisplayItem((LPNMLVDISPINFOA) lParam, browser);
+                    StarBrowserDisplayItem(reinterpret_cast<NMLVDISPINFO*>(lParam), browser);
                     break;
                 case LVN_ITEMCHANGED:
                     {

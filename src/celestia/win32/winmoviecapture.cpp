@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 #include <fmt/format.h>
@@ -100,7 +101,7 @@ InitDialog(HWND hDlg)
 #ifdef _UNICODE
         SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(buf.data()));
 #else
-        WideToCurrentCP(std::wstring_view(buf.data(), buf.size()), acpBuf);
+        AppendWideToCurrentCP(std::wstring_view(buf.data(), buf.size()), acpBuf);
         SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(acpBuf.data()));
 #endif
     }
@@ -115,7 +116,7 @@ InitDialog(HWND hDlg)
 #ifdef _UNICODE
         SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(buf.data()));
 #else
-        WideToCurrentCP(std::wstring_view(buf.data(), buf.size()), acpBuf);
+        AppendWideToCurrentCP(std::wstring_view(buf.data(), buf.size()), acpBuf);
         SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(acpBuf.data()));
 #endif
     }
@@ -125,10 +126,12 @@ InitDialog(HWND hDlg)
     for (const auto& movieCodec : MovieCodecs)
     {
 #ifdef _UNICODE
-        UTF8ToTChar(_(movieCodec.codecDesc), buf);
+        buf.clear();
+        AppendUTF8ToTChar(_(movieCodec.codecDesc), buf);
         SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(buf.data()));
 #else
-        UTF8ToTChar(_(movieCodec.codecDesc), acpBuf);
+        acpBuf.clear();
+        AppendUTF8ToTChar(_(movieCodec.codecDesc), acpBuf);
         SendMessage(hwnd, CB_INSERTSTRING, -1, reinterpret_cast<LPARAM>(acpBuf.data()));
 #endif
     }
@@ -140,7 +143,7 @@ InitDialog(HWND hDlg)
     return TRUE;
 }
 
-UINT CALLBACK
+UINT_PTR CALLBACK
 ChooseMovieParamsProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
     switch (message)
@@ -216,27 +219,29 @@ void HandleCaptureMovie(HINSTANCE appInstance, HWND hWnd, CelestiaCore* appCore)
 
     // Display File SaveAs dialog to allow user to specify name and location of
     // of captured movie
-    OPENFILENAME Ofn;
-    std::array<TCHAR, _MAX_PATH+1> szFile;
-    szFile.fill(TEXT('\0'));
-    // std::array<TCHAR, _MAX_PATH+1> szFileTitle;
-    // szFileTitle.fill(TEXT('\0'));
+    std::array<wchar_t, _MAX_PATH+1> szFile;
+    szFile.fill(L'\0');
 
-    // Initialize OPENFILENAME
-    ZeroMemory(&Ofn, sizeof(OPENFILENAME));
-    Ofn.lStructSize = sizeof(OPENFILENAME);
+    std::wstring filter;
+    AppendUTF8ToWide(_("Matroska (*.mkv)"), filter);
+    filter.append(L"\0*.mkv\0\0"sv);
+
+    // Initialize OPENFILENAMEW - use the wide character version to match the
+    // filesystem.
+    OPENFILENAMEW Ofn;
+    ZeroMemory(&Ofn, sizeof(OPENFILENAMEW));
+    Ofn.lStructSize = sizeof(OPENFILENAMEW);
     Ofn.hwndOwner = hWnd;
-    Ofn.lpstrFilter = TEXT("Matroska (*.mkv)\0*.mkv\0");
+    Ofn.lpstrFilter = filter.data();
     Ofn.lpstrFile = szFile.data();
     Ofn.nMaxFile = static_cast<DWORD>(szFile.size());
-    // Ofn.lpstrFileTitle = szFileTitle.data();
-    // Ofn.nMaxFileTitle = static_cast<DWORD>(szFileTitle.size());
     Ofn.lpstrFileTitle = nullptr;
     Ofn.nMaxFileTitle = 0;
     Ofn.lpstrInitialDir = nullptr;
 
     // Comment this out if you just want the standard "Save As" caption.
-    tstring title = UTF8ToTString(_("Save As - Specify Output File for Capture Movie"));
+    std::wstring title;
+    AppendUTF8ToWide(_("Save As - Specify Output File for Capture Movie"), title);
     Ofn.lpstrTitle = title.c_str();
 
     // OFN_HIDEREADONLY - Do not display read-only video files
@@ -244,11 +249,11 @@ void HandleCaptureMovie(HINSTANCE appInstance, HWND hWnd, CelestiaCore* appCore)
     Ofn.Flags = OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT  | OFN_EXPLORER | OFN_ENABLETEMPLATE | OFN_ENABLEHOOK | OFN_NOCHANGEDIR;
 
     Ofn.hInstance = appInstance;
-    Ofn.lpTemplateName = MAKEINTRESOURCE(IDD_MOVIE_PARAMS_CHOOSER);
-    Ofn.lpfnHook = (LPOFNHOOKPROC)ChooseMovieParamsProc;
+    Ofn.lpTemplateName = MAKEINTRESOURCEW(IDD_MOVIE_PARAMS_CHOOSER);
+    Ofn.lpfnHook = &ChooseMovieParamsProc;
 
     // Display the Save dialog box.
-    if (!GetSaveFileName(&Ofn))
+    if (!GetSaveFileNameW(&Ofn))
         return;
 
     // If you got here, a path and file has been specified.
@@ -257,13 +262,13 @@ void HandleCaptureMovie(HINSTANCE appInstance, HWND hWnd, CelestiaCore* appCore)
 
     fs::path filename(szFile.data());
 
-    constexpr std::array<std::string_view, 1> defaultExtensions
+    constexpr std::array<std::wstring_view, 1> defaultExtensions
     {
-        ".mkv"sv,
+        L".mkv"sv,
     };
 
-    auto extension = filename.extension().native();
-    if ((extension.empty() || extension == L"."sv) &&
+    if (auto extension = filename.extension();
+        (extension.empty() || extension == L"."sv) &&
         Ofn.nFilterIndex > 0 && Ofn.nFilterIndex <= defaultExtensions.size())
     {
         // If no extension was specified or extension was just a period,

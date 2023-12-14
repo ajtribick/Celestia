@@ -18,7 +18,7 @@ namespace celestia::win32
 namespace detail
 {
 
-inline constexpr tcharconv_buffer_size = 128;
+inline constexpr std::size_t tcharconv_buffer_size = 128;
 
 template<std::size_t N>
 std::size_t
@@ -42,34 +42,34 @@ template<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
 compat::from_chars_result
 from_tchars(const wchar_t* first, const wchar_t* last, T& value, int base = 10)
 {
-    fmt::memory_buffer<char, detail::tcharconv_buffer_size> buffer;
+    fmt::basic_memory_buffer<char, detail::tcharconv_buffer_size> buffer;
     auto size = detail::fill_buffer(buffer, first, last);
     return compat::from_chars(buffer.data(), buffer.data() + size, value, base);
 }
 
-compat::from_chars_result
+inline compat::from_chars_result
 from_tchars(const wchar_t* first, const wchar_t* last, float& value,
             compat::chars_format fmt = compat::chars_format::general)
 {
-    fmt::memory_buffer<char, detail::tcharconv_buffer_size> buffer;
+    fmt::basic_memory_buffer<char, detail::tcharconv_buffer_size> buffer;
     auto size = detail::fill_buffer(buffer, first, last);
     return compat::from_chars(buffer.data(), buffer.data() + size, value, fmt);
 }
 
-compat::from_chars_result
+inline compat::from_chars_result
 from_tchars(const wchar_t* first, const wchar_t* last, double& value,
             compat::chars_format fmt = compat::chars_format::general)
 {
-    fmt::memory_buffer<char, detail::tcharconv_buffer_size> buffer;
+    fmt::basic_memory_buffer<char, detail::tcharconv_buffer_size> buffer;
     auto size = detail::fill_buffer(buffer, first, last);
     return compat::from_chars(buffer.data(), buffer.data() + size, value, fmt);
 }
 
-compat::from_chars_result
+inline compat::from_chars_result
 from_tchars(const wchar_t* first, const wchar_t* last, long double& value,
             compat::chars_format fmt = compat::chars_format::general)
 {
-    fmt::memory_buffer<char, detail::tcharconv_buffer_size> buffer;
+    fmt::basic_memory_buffer<char, detail::tcharconv_buffer_size> buffer;
     auto size = detail::fill_buffer(buffer, first, last);
     return compat::from_chars(buffer.data(), buffer.data() + size, value, fmt);
 }
@@ -77,7 +77,7 @@ from_tchars(const wchar_t* first, const wchar_t* last, long double& value,
 #else
 
 template<typename T, std::enable_if_t<std::is_integral_v<T>, int> = 0>
-inline compat::from_chars_result
+compat::from_chars_result
 from_tchars(const char* first, const char* last, T& value, int base = 10)
 {
     return compat::from_chars(first, last, value, base);

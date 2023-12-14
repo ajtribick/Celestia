@@ -15,43 +15,91 @@ namespace celestia::win32
 using tstring = std::basic_string<TCHAR>;
 using tstring_view = std::basic_string_view<TCHAR>;
 
+// UTF-8 to wchar_t, growable
+template<typename T, std::enable_if_t<std::is_same_v<typename T::value_type, wchar_t>, int> = 0>
+int
+AppendUTF8ToWide(std::string_view source, T& destination)
+{
+    if (source.empty())
+        return 0;
+
+    const auto sourceSize = static_cast<int>(source.size());
+    int wideLength = MultiByteToWideChar(CP_UTF8, 0, source.data(), sourceSize, nullptr, 0);
+    if (wideLength <= 0)
+        return 0;
+
+    const auto existingSize = destination.size();
+    destination.resize(existingSize + static_cast<std::size_t>(wideLength));
+    MultiByteToWideChar(CP_UTF8, 0,
+                        source.data(), sourceSize,
+                        destination.data() + existingSize, wideLength);
+    return wideLength;
+}
+
+template<typename T, std::enable_if_t<std::is_same_v<typename T::value_type, wchar_t>, int> = 0>
+int
+AppendCurrentCPToWide(std::string_view source, T& destination)
+{
+    if (source.empty())
+        return 0;
+
+    const auto sourceSize = static_cast<int>(source.size());
+    int wideLength = MultiByteToWideChar(CP_ACP, 0, source.data(), sourceSize, nullptr, 0);
+    if (wideLength <= 0)
+        return 0;
+
+    const auto existingSize = destination.size();
+    destination.resize(existingSize + static_cast<std::size_t>(wideLength));
+    MultiByteToWideChar(CP_ACP, 0,
+                        source.data(), sourceSize,
+                        destination.data() + existingSize, wideLength);
+    return wideLength;
+}
+
+template<typename T, std::enable_if_t<std::is_same_v<typename T::value_type, char>, int> = 0>
+int
+AppendWideToCurrentCP(std::wstring_view source, T& destination)
+{
+    if (source.empty())
+        return 0;
+
+    const auto sourceSize = static_cast<int>(source.size());
+    int destLength = WideCharToMultiByte(CP_ACP, 0, source.data(), sourceSize, nullptr, 0, nullptr, nullptr);
+    if (destLength <= 0)
+        return 0;
+
+    const auto existingSize = destination.size();
+    destination.resize(existingSize + static_cast<std::size_t>(destLength));
+    return WideCharToMultiByte(CP_ACP, 0,
+                               source.data(), sourceSize,
+                               destination.data() + existingSize, destLength,
+                               nullptr, nullptr);
+}
+
+inline std::string
+WideToCurrentCP(std::wstring_view wstr)
+{
+    std::string result;
+    AppendWideToCurrentCP(wstr, result);
+    return result;
+}
+
 // UTF-8 to TCHAR, fixed buffer
 int UTF8ToTChar(std::string_view str, tstring::value_type* dest, int destSize);
 
 // UTF-8 to TCHAR, growable
 template<typename T, std::enable_if_t<std::is_same_v<typename T::value_type, TCHAR>, int> = 0>
 int
-UTF8ToTChar(std::string_view source, T& destination)
+AppendUTF8ToTChar(std::string_view source, T& destination)
 {
-    if (source.empty())
-    {
-        destination.clear();
-        return 0;
-    }
-
-    const auto sourceSize = static_cast<int>(source.size());
-    int wideLength = MultiByteToWideChar(CP_UTF8, 0, source.data(), sourceSize, nullptr, 0);
-    if (wideLength <= 0)
-    {
-        destination.clear();
-        return 0;
-    }
 #ifdef _UNICODE
-    destination.resize(static_cast<std::size_t>(wideLength));
-    return MultiByteToWideChar(CP_UTF8, 0, source.data(), sourceSize, destination.data(), wideLength);
+    return AppendUTF8ToWide(source, destination);
 #else
-    fmt::basic_memory_buffer<wchar_t> buffer;
-    buffer.resize(static_cast<std::size_t>(wideLength));
-    MultiByteToWideChar(CP_UTF8, 0, source.data(), sourceSize, buffer.data(), wideLength);
-
-    int destLength = WideCharToMultiByte(CP_ACP, 0, buffer.data(), wideLength, nullptr, 0, nullptr, nullptr);
-    if (destLength <= 0)
-    {
-        destination.clear();
+    fmt::basic_memory_buffer<wchar_t> wbuffer;
+    if (AppendUTF8ToWide(source, wbuffer) <= 0)
         return 0;
-    }
-    destination.resize(static_cast<std::size_t>(destLength));
-    return WideCharToMultiByte(CP_ACP, 0, buffer.data(), wideLength, destination.data(), destLength, nullptr, nullptr);
+
+    return AppendWideToCurrentCP(std::wstring_view(wbuffer.data(), wbuffer.size()), destination);
 #endif
 }
 
@@ -59,41 +107,59 @@ inline tstring
 UTF8ToTString(std::string_view str)
 {
     tstring result;
-    UTF8ToTChar(str, result);
+    AppendUTF8ToTChar(str, result);
     return result;
 }
 
-#ifndef _UNICODE
 template<typename T, std::enable_if_t<std::is_same_v<typename T::value_type, char>, int> = 0>
 int
-WideToCurrentCP(std::wstring_view source, T& destination)
+AppendTCharToUTF8(tstring_view source, T& destination)
 {
     if (source.empty())
-    {
-        destination.clear();
         return 0;
-    }
-    const auto sourceSize = static_cast<int>(source.size());
-    int destLength = WideCharToMultiByte(CP_ACP, 0, source.data(), sourceSize, nullptr, 0, nullptr, nullptr);
-    if (destLength <= 0)
-    {
-        destination.clear();
-        return 0;
-    }
 
-    destination.resize(static_cast<std::size_t>(destLength));
-    return WideCharToMultiByte(CP_ACP, 0, source.data(), sourceSize, destination.data(), destLength, nullptr, nullptr);
+    const auto sourceSize = static_cast<int>(source.size());
+    const auto existingSize = destination.size();
+#ifdef _UNICODE
+    int length = WideCharToMultiByte(CP_UTF8, 0, source.data(), sourceSize, nullptr, 0, nullptr, nullptr);
+    if (length <= 0)
+        return 0;
+
+    destination.resize(destination.size() + static_cast<std::size_t>(length));
+    return WideCharToMultiByte(CP_UTF8, 0,
+                               source.data(), sourceSize,
+                               destination.data() + existingSize, length,
+                               nullptr, nullptr);
+#else
+    int wlength = MultiByteToWideChar(CP_ACP, 0, source.data(), sourceSize, nullptr, 0);
+    if (wlength <= 0)
+        return 0;
+
+    fmt::basic_memory_buffer<wchar_t> wbuffer;
+    wbuffer.resize(static_cast<std::size_t>(wlength));
+    MultiByteToWideChar(CP_ACP, 0, source.data(), sourceSize, wbuffer.data(), wlength);
+
+    int length = WideCharToMultiByte(CP_UTF8, 0, wbuffer.data(), wlength, nullptr, 0, nullptr, nullptr);
+    if (length <= 0)
+        return 0;
+
+    destination.resize(destination.size() + static_cast<std::size_t>(length));
+    return WideCharToMultiByte(CP_UTF8, 0,
+                               wbuffer.data(), wlength,
+                               destination.data() + existingSize, length,
+                               nullptr, nullptr);
+#endif
 }
 
 inline std::string
-WideToCurrentCP(std::wstring_view wstr)
+TCharToUTF8String(tstring_view tstr)
 {
     std::string result;
-    WideToCurrentCP(wstr, result);
+    AppendTCharToUTF8(tstr, result);
     return result;
 }
 
-#endif
+
 
 int CompareUTF8Localized(std::string_view, std::string_view);
 

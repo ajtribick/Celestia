@@ -117,7 +117,7 @@ InitEclipseFinderItems(HWND listView, const std::vector<Eclipse>& eclipses)
 }
 
 void
-EclipseFinderDisplayItem(LPNMLVDISPINFOA nm, util::array_view<tstring> monthNames)
+EclipseFinderDisplayItem(NMLVDISPINFO* nm, util::array_view<tstring> monthNames)
 {
     auto eclipse = reinterpret_cast<const Eclipse*>(nm->item.lParam);
     if (eclipse == NULL)
@@ -439,7 +439,7 @@ EclipseFinderProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
                 switch(hdr->code)
                 {
                 case LVN_GETDISPINFO:
-                    EclipseFinderDisplayItem(reinterpret_cast<LPNMLVDISPINFOA>(lParam), eclipseFinderDlg->monthNames);
+                    EclipseFinderDisplayItem(reinterpret_cast<NMLVDISPINFO*>(lParam), eclipseFinderDlg->monthNames);
                     break;
 
                 case LVN_ITEMCHANGED:

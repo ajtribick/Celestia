@@ -33,7 +33,7 @@ InitializeDPIFunctionPointersIfNeeded()
     if (dpiFunctionPointersInitialized)
         return;
 
-    HMODULE hUser = GetModuleHandle("user32.dll");
+    HMODULE hUser = GetModuleHandleW(L"user32.dll");
     if (!hUser)
         return;
 

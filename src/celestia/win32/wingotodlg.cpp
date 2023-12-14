@@ -40,38 +40,6 @@ namespace celestia::win32
 namespace
 {
 
-template<typename T>
-bool
-CurrentCPToUTF8(std::string_view source, T& dest)
-{
-    if (source.empty())
-        return true;
-    const int sourceLength = static_cast<int>(source.size());
-#ifdef _UNICODE
-    const int utf8Length = WideCharToMultiByte(CP_UTF8, source.data(), sourceLength, nullptr, 0, nullptr, nullptr);
-#else
-    const int wideLength = MultiByteToWideChar(CP_ACP, 0, source.data(), sourceLength, nullptr, 0);
-    if (wideLength <= 0)
-        return false;
-
-    fmt::basic_memory_buffer<wchar_t> wbuffer;
-    wbuffer.resize(static_cast<std::size_t>(wideLength));
-    MultiByteToWideChar(CP_ACP, 0, source.data(), sourceLength, wbuffer.data(), wideLength);
-
-    const int utf8Length = WideCharToMultiByte(CP_UTF8, 0, wbuffer.data(), wideLength, nullptr, 0, nullptr, nullptr);
-#endif
-    if (utf8Length <= 0)
-        return false;
-
-    dest.resize(static_cast<std::size_t>(utf8Length));
-#ifdef _UNICODE
-    WideCharToMultiByte(CP_UTF8, 0, source.data(), sourceLength, dest.data(), utf8Length, nullptr, nullptr);
-#else
-    WideCharToMultiByte(CP_UTF8, 0, wbuffer.data(), wideLength, dest.data(), utf8Length, nullptr, nullptr);
-#endif
-    return true;
-}
-
 bool
 GetDialogFloat(HWND hDlg, int id, float& f)
 {
@@ -126,7 +94,7 @@ GotoObjectProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
             SetDialogFloat(hDlg, IDC_EDIT_LONGITUDE, 5, (float)longitude);
             SetDialogFloat(hDlg, IDC_EDIT_LATITUDE, 5, (float)latitude);
             SetDlgItemText(hDlg, IDC_EDIT_OBJECTNAME,
-                const_cast<char*>(UTF8ToTString(sim->getSelection().body()->getName(true)).c_str()));
+                const_cast<TCHAR*>(UTF8ToTString(sim->getSelection().body()->getName(true)).c_str()));
         }
 
         return TRUE;
@@ -146,7 +114,7 @@ GotoObjectProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
             if (len > 0)
             {
                 fmt::memory_buffer path;
-                CurrentCPToUTF8(tstring_view(buf.data(), static_cast<std::size_t>(len)), path);
+                AppendTCharToUTF8(tstring_view(buf.data(), static_cast<std::size_t>(len)), path);
                 sel = sim->findObjectFromPath(std::string_view(path.data(), path.size()), true);
             }
 
