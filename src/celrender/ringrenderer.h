@@ -29,7 +29,7 @@ namespace celestia::render
 class RingRenderer
 {
 public:
-    explicit RingRenderer(Renderer&);
+    RingRenderer(Renderer&);
     ~RingRenderer() = default;
 
     void renderRings(RingSystem& rings,

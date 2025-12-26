@@ -19,10 +19,10 @@
 #include <celcompat/numbers.h>
 #include <celengine/body.h>
 #include <celengine/lightenv.h>
-#include <celengine/multitexture.h>
 #include <celengine/render.h>
 #include <celengine/renderinfo.h>
 #include <celengine/shadermanager.h>
+#include <celengine/texmanager.h>
 #include <celengine/texture.h>
 #include <celmath/mathlib.h>
 
@@ -158,7 +158,7 @@ RingRenderer::renderRings(RingSystem& rings,
 {
     float inner = rings.innerRadius / planetRadius;
     float outer = rings.outerRadius / planetRadius;
-    Texture* ringsTex = rings.texture.find(renderer.getResolution());
+    Texture* ringsTex = renderer.getTextureManager()->find(rings.texture);
 
     ShaderProperties shadprop = createShaderProperties(ls, ringsTex, renderShadow);
 

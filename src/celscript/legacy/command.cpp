@@ -696,7 +696,7 @@ void CommandCapture::processInstantaneous(ExecutionEnvironment& env)
 ////////////////
 // Set texture resolution command
 
-CommandSetTextureResolution::CommandSetTextureResolution(TextureResolution _res) :
+CommandSetTextureResolution::CommandSetTextureResolution(engine::TextureResolution _res) :
     res(_res)
 {
 }
@@ -1074,7 +1074,6 @@ void CommandSetWindowBordersVisible::processInstantaneous(ExecutionEnvironment& 
     env.getCelestiaCore()->setFramesVisible(visible);
 }
 
-
 ///////////////
 // SetRingsTexture command
 CommandSetRingsTexture::CommandSetRingsTexture(std::string _object,
@@ -1095,9 +1094,13 @@ void CommandSetRingsTexture::processInstantaneous(ExecutionEnvironment& env)
     if (body == nullptr)
         return;
 
+#if 0
+    // TODO reimplement this
+
     auto rings = GetBodyFeaturesManager()->getRings(body);
     if (rings != nullptr)
         rings->texture = MultiResTexture(textureName, path);
+#endif
 }
 
 } // end namespace celestia::scripts
