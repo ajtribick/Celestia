@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 
 #include <Eigen/Geometry>
 
@@ -250,8 +251,8 @@ CometRenderer::render(const Body &body,
     m_prog->vec3Param("viewDir") = pos.normalized();
     m_prog->floatParam("fadeFactor") = fadeFactor;
 
-    m_bo->invalidateData().setSubData(0, util::array_view(m_vertices.get(), MaxVertices));
-    m_ibo->invalidateData().setSubData(0, util::array_view(m_indices.get(), MaxIndices));
+    m_bo->invalidateData().setSubData(0, std::as_bytes(std::span{m_vertices.get(), MaxVertices}));
+    m_ibo->invalidateData().setSubData(0, std::as_bytes(std::span{m_indices.get(), MaxIndices}));
 
     glDisable(GL_CULL_FACE);
     int count = IndexListCapacity(nTailSlices, nTailPoints);
