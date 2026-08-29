@@ -1,4 +1,5 @@
 #include <array>
+#include <bit>
 #include <cctype>
 #include <cstddef>
 #include <cstdio>
@@ -12,19 +13,18 @@
 #include <fmt/format.h>
 
 #include <celephem/xyzvbinary.h>
-#include <celcompat/bit.h>
 
-static constexpr std::uint16_t endianCode(celestia::compat::endian endianness)
+static constexpr std::uint16_t endianCode(std::endian endianness)
 {
     switch (endianness)
     {
-    case celestia::compat::endian::little: return 1234;
-    case celestia::compat::endian::big: return 4321;
+    case std::endian::little: return 1234;
+    case std::endian::big: return 4321;
     default: return 0;
     }
 }
 
-static constexpr std::uint16_t nativeEndianCode = endianCode(celestia::compat::endian::native);
+static constexpr std::uint16_t nativeEndianCode = endianCode(std::endian::native);
 
 // Scan past comments. A comment begins with the # character and ends
 // with a newline. Return true if the stream state is good. The stream

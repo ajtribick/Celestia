@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -29,7 +30,6 @@
 #include <Eigen/Core>
 
 #include <celastro/date.h>
-#include <celcompat/bit.h>
 #include <celmath/mathlib.h>
 #include <celutil/filetype.h>
 #include <celutil/fsutils.h>
@@ -47,20 +47,20 @@ namespace celestia::ephem
 namespace
 {
 
-constexpr std::uint16_t endianCode(celestia::compat::endian endianness)
+constexpr std::uint16_t endianCode(std::endian endianness)
 {
-    static_assert(celestia::compat::endian::native == celestia::compat::endian::little ||
-                  celestia::compat::endian::native == celestia::compat::endian::big,
+    static_assert(std::endian::native == std::endian::little ||
+                  std::endian::native == std::endian::big,
                   "Mixed endian systems are not supported");
     switch (endianness)
     {
-    case celestia::compat::endian::little: return 1234;
-    case celestia::compat::endian::big: return 4321;
+    case std::endian::little: return 1234;
+    case std::endian::big: return 4321;
     default: return 0;
     }
 }
 
-constexpr std::uint16_t nativeEndianCode = endianCode(celestia::compat::endian::native);
+constexpr std::uint16_t nativeEndianCode = endianCode(std::endian::native);
 
 template<typename T>
 inline void
