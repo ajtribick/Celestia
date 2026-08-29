@@ -11,6 +11,7 @@
 #pragma once
 
 #include <array>
+#include <compare>
 #include <list>
 #include <memory>
 #include <span>
@@ -354,7 +355,7 @@ class Renderer
         LabelVerticalAlignment valign : 3;
         float size;
 
-        bool operator<(const Annotation&) const;
+        std::partial_ordering operator<=>(const Annotation&) const;
     };
 
     void addForegroundAnnotation(const celestia::MarkerRepresentation* markerRep,
@@ -409,7 +410,8 @@ class Renderer
         Eigen::Vector3d origin;
         float opacity;
 
-        bool operator<(const OrbitPathListEntry&) const;
+        friend bool operator==(const OrbitPathListEntry&, const OrbitPathListEntry&) = default;
+        std::partial_ordering operator<=>(const OrbitPathListEntry&) const;
     };
 
     enum class FontStyle : std::uint8_t
