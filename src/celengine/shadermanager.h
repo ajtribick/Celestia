@@ -61,10 +61,9 @@ struct StaticShaderProperties
 {
     StaticShader        shader;
     StaticShaderOptions options;
-};
 
-bool
-operator==(const StaticShaderProperties& lhs, const StaticShaderProperties& rhs);
+    friend constexpr bool operator==(const StaticShaderProperties&, const StaticShaderProperties&) noexcept = default;
+};
 
 template<>
 struct std::hash<StaticShaderProperties>
@@ -194,13 +193,9 @@ struct ShaderProperties
 
     FisheyeOverrideMode fishEyeOverride { FisheyeOverrideMode::None };
     bool separateRayleighMieScaleHeights{ false };
+
+    friend bool operator==(const ShaderProperties&, const ShaderProperties&) noexcept = default;
 };
-
-bool
-operator==(const ShaderProperties& lhs, const ShaderProperties& rhs);
-
-inline bool
-operator!=(const ShaderProperties& lhs, const ShaderProperties& rhs) { return !(lhs == rhs); }
 
 template<>
 struct std::hash<ShaderProperties>
